@@ -13,7 +13,7 @@ application.
 
 It also adds a few practical experiments:
 
-- an inference router for Cursor, Claude Code, Codex, and OpenRouter;
+- an inference router for Cursor, Claude Code, Codex, OpenRouter, and generic OpenAI-compatible endpoints;
 - Grok Bot plugin/MCP tools across the routed providers;
 - local usage tracking for routed inference;
 - an optional local Docker sandbox in place of the remote box; and
@@ -88,6 +88,16 @@ Open **Settings → Router** to choose the backend used for new turns:
 | Claude Code | Existing Claude Code login | Routed Grok Bot MCP tools |
 | Codex | Existing local ChatGPT/Codex login | Direct Responses transport with Grok Bot tools |
 | OpenRouter | API key saved through the desktop secrets bridge | Grok Bot tool-execution loop |
+| OpenAI Compatible | API key saved through the desktop secrets bridge + endpoint/model environment config | Grok Bot tool-execution loop |
+
+For **OpenAI Compatible**, save `OPENAI_COMPATIBLE_API_KEY` in **Settings → Router** and start Grok Bot with:
+
+```sh
+export SAND_OPENAI_COMPATIBLE_BASE_URL="https://your-provider.example/v1"
+export SAND_OPENAI_COMPATIBLE_MODEL="your-model-id"
+```
+
+The API key may alternatively be supplied as `SAND_OPENAI_COMPATIBLE_API_KEY`. Remote custom endpoints must use HTTPS; plain HTTP is accepted only for `localhost` and `127.0.0.1`. The endpoint must implement OpenAI-compatible Chat Completions semantics, including function/tool calling if Grok Bot tools are expected to work.
 
 Cursor is the default. Claude Code and Codex do not require separate API keys
 when their local clients are already authenticated. The application preserves

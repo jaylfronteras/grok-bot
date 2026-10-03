@@ -48,6 +48,29 @@ function openRouterCredential(): string {
   return value;
 }
 
+function openAICompatibleCredential(): string {
+  const value = process.env.SAND_OPENAI_COMPATIBLE_API_KEY?.trim() || persistedSecrets().OPENAI_COMPATIBLE_API_KEY?.trim();
+  if (value == null || value.length === 0) throw new Error("OpenAI Compatible needs OPENAI_COMPATIBLE_API_KEY or SAND_OPENAI_COMPATIBLE_API_KEY.");
+  return value;
+}
+
+function openAICompatibleBaseUrl(): string {
+  const value = process.env.SAND_OPENAI_COMPATIBLE_BASE_URL?.trim();
+  if (value == null || value.length === 0) throw new Error("OpenAI Compatible needs SAND_OPENAI_COMPATIBLE_BASE_URL (for example https://provider.example/v1).");
+  let parsed: URL;
+  try { parsed = new URL(value); } catch { throw new Error("SAND_OPENAI_COMPATIBLE_BASE_URL must be a valid absolute URL."); }
+  if (parsed.protocol !== "https:" && parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") {
+    throw new Error("OpenAI-compatible endpoints must use HTTPS unless they are local.");
+  }
+  return value.replace(/\/$/, "");
+}
+
+function openAICompatibleModel(): string {
+  const value = process.env.SAND_OPENAI_COMPATIBLE_MODEL?.trim();
+  if (value == null || value.length === 0) throw new Error("OpenAI Compatible needs SAND_OPENAI_COMPATIBLE_MODEL.");
+  return value;
+}
+
 function providerPrompt(messages: readonly ProviderMessage[]): string {
   const rendered = messages.map(message => {
     const content = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
@@ -254,17 +277,33 @@ function openRouterExecutor(messages: readonly ProviderMessage[], invocationId: 
   return { fullStream: result.fullStream, response: result.response, usage: result.usage, extendedUsage, providerMetadata: result.providerMetadata, invocationId: Promise.resolve(invocationId) };
 }
 
+function openAICompatibleExecutor(messages: readonly ProviderMessage[], invocationId: string, definitions?: readonly Loose[], executeTool?: RoutedToolExecutor, onUsage?: (usage: UsageRecord) => void) {
+  const id = openAICompatibleModel();
+  const model: LanguageModelV1 = createOpenAI({
+    apiKey: openAICompatibleCredential(),
+    baseURL: openAICompatibleBaseUrl(),
+    compatibility: "compatible",
+    name: "openai-compatible",
+  }).chat(id as any);
+  const tools = toToolSet(definitions, executeTool);
+  const result = streamText({ model, system: GROK_ROUTER_SYSTEM_PROMPT, messages: messages as CoreMessage[], ...(tools === undefined ? {} : { tools }), toolCallStreaming: true, maxSteps: tools === undefined ? 1 : 8 });
+  const extendedUsage = result.usage.then(value => ({ inputTokens: value.promptTokens, outputTokens: value.completionTokens, cacheReadTokens: 0, cacheWriteTokens: 0, maxTokens: 0 }));
+  if (onUsage != null) void extendedUsage.then(onUsage);
+  return { fullStream: result.fullStream, response: result.response, usage: result.usage, extendedUsage, providerMetadata: result.providerMetadata, invocationId: Promise.resolve(invocationId) };
+}
+
 class ProviderPromptExecutor extends BasePromptExecutor<ProviderMessage> {
   constructor(readonly provider: RoutedProvider, initialMessages?: readonly ProviderMessage[], readonly onUsage?: (usage: UsageRecord) => void) { super(new BasePromptBuilder(initialMessages)); }
   stream(_ctx: unknown, invocationId = crypto.randomUUID(), definitions?: readonly Loose[]) {
     if (this.provider === "codex") return codexExecutor(this.getMessages(), invocationId, definitions, undefined, this.onUsage);
     if (this.provider === "claude-code") return claudeExecutor(this.getMessages(), invocationId, this.onUsage);
+    if (this.provider === "openai-compatible") return openAICompatibleExecutor(this.getMessages(), invocationId, definitions, undefined, this.onUsage);
     return openRouterExecutor(this.getMessages(), invocationId, definitions, undefined, this.onUsage);
   }
 }
 
 export function createProviderPromptSession(provider: RoutedProvider): { getModelId(): string; getExecutor(state?: unknown): PromptExecutor } {
-  const modelId = provider === "codex" ? configuredCodexModel() : provider === "claude-code" ? "claude-code" : process.env.SAND_OPENROUTER_MODEL?.trim() || "openai/gpt-5.2";
+  const modelId = provider === "codex" ? configuredCodexModel() : provider === "claude-code" ? "claude-code" : provider === "openai-compatible" ? openAICompatibleModel() : process.env.SAND_OPENROUTER_MODEL?.trim() || "openai/gpt-5.2";
   return { getModelId: () => modelId, getExecutor: state => new ProviderPromptExecutor(provider, Array.isArray(state) ? state as ProviderMessage[] : undefined, usage => recordRoutedUsage(provider, usage)) };
 }
 
@@ -280,7 +319,9 @@ export async function runRoutedProviderText(provider: RoutedProvider, messages: 
     ? codexExecutor(messages, invocationId, options?.tools, options?.executeTool, onUsage)
     : provider === "claude-code"
       ? claudeExecutor(messages, invocationId, onUsage, options?.mcpServerUrl)
-      : openRouterExecutor(messages, invocationId, options?.tools, options?.executeTool, onUsage);
+      : provider === "openai-compatible"
+        ? openAICompatibleExecutor(messages, invocationId, options?.tools, options?.executeTool, onUsage)
+        : openRouterExecutor(messages, invocationId, options?.tools, options?.executeTool, onUsage);
   let text = "";
   for await (const event of result.fullStream) {
     if (event.type === "text-delta" && typeof event.textDelta === "string") {
