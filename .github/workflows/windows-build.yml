@@ -31,14 +31,7 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Verify source
         run: npm run check
-      - name: Build reconstructed ASAR
-        shell: pwsh
-        run: |
-          $env:GROK_BOT_018_APP = ""
-          node scripts/clean-build.mjs
-      - name: Compose Windows portable build
-        run: node scripts/package-windows.mjs
-      - name: Upload Windows x64 artifact
+      - name: Compose Windows portable build\n        run: node scripts/package-windows.mjs\n      - name: Upload Windows x64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: grok-bot-reconstructed-windows-x64
