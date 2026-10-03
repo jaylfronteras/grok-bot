@@ -73,3 +73,20 @@ test("routed transcript rejects malformed rich text carriers", async () => {
     await loaded.dispose();
   }
 });
+
+
+test("routed transcript accepts OpenAI-compatible provider entries", async () => {
+  const loaded = await loadModule();
+  try {
+    const store = loaded.module.parseInferenceRouterTranscriptStore({
+      schemaVersion: 2,
+      agents: {
+        agent: [{ provider: "openai-compatible", role: "user", content: "hello", id: "t1u", timestampMs: 123 }],
+      },
+    });
+    assert.equal(store.agents.agent.length, 1);
+    assert.equal(store.agents.agent[0].provider, "openai-compatible");
+  } finally {
+    await loaded.dispose();
+  }
+});
