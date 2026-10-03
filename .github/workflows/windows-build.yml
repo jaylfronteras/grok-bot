@@ -1,0 +1,47 @@
+name: Windows experimental build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["feature/windows-installer"]
+  pull_request:
+    paths:
+      - "source/**"
+      - "frontend/**"
+      - "scripts/**"
+      - "research-archives/original/0.18.0/windows-x64/**"
+      - ".github/workflows/windows-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.5.0
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify source
+        run: npm run check
+      - name: Build reconstructed ASAR
+        shell: pwsh
+        run: |
+          $env:GROK_BOT_018_APP = ""
+          node scripts/clean-build.mjs
+      - name: Compose Windows portable build
+        run: node scripts/package-windows.mjs
+      - name: Upload Windows x64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grok-bot-reconstructed-windows-x64
+          path: dist/windows-x64/**
+          if-no-files-found: error
+          retention-days: 14
