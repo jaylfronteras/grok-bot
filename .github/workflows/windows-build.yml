@@ -3,14 +3,15 @@ name: Windows experimental build
 on:
   workflow_dispatch:
   push:
-    branches: ["feature/windows-installer"]
+    branches:
+      - feature/windows-installer
   pull_request:
     paths:
-      - "source/**"
-      - "frontend/**"
-      - "scripts/**"
-      - "research-archives/original/0.18.0/windows-x64/**"
-      - ".github/workflows/windows-build.yml"
+      - source/**
+      - frontend/**
+      - scripts/**
+      - research-archives/original/0.18.0/windows-x64/**
+      - .github/workflows/windows-build.yml
 
 permissions:
   contents: read
@@ -31,7 +32,9 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Verify source
         run: npm run check
-      - name: Compose Windows portable build\n        run: node scripts/package-windows.mjs\n      - name: Upload Windows x64 artifact
+      - name: Compose Windows portable build
+        run: node scripts/package-windows.mjs
+      - name: Upload Windows x64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: grok-bot-reconstructed-windows-x64
