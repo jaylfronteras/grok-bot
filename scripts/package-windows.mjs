@@ -29,6 +29,28 @@ async function findFile(root, name) {
   }
   return null;
 }
+async function walk(root, current = root) {
+  const found = [];
+  for (const entry of await readdir(current, { withFileTypes: true })) {
+    const target = path.join(current, entry.name);
+    if (entry.isDirectory()) found.push(...await walk(root, target));
+    else found.push(path.relative(root, target).split(path.sep).join("/"));
+  }
+  return found;
+}
+async function extractNestedArchives(root, sevenZip) {
+  const candidates = (await walk(root)).filter(name => /(?:\.7z|\.zip|\.nupkg)$/i.test(name));
+  for (const relative of candidates) {
+    const archive = path.join(root, relative);
+    const nested = path.join(root, ".nested", relative.replace(/[^a-z0-9._-]+/gi, "_"));
+    await mkdir(nested, { recursive: true });
+    try {
+      await execFileAsync(sevenZip, ["x", "-y", `-o${nested}`, archive], { windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
+    } catch {
+      // Some installer resources look like archives but are not independently extractable.
+    }
+  }
+}
 
 if (process.platform !== "win32") throw new Error("Windows packaging must run on a Windows runner.");
 if (await sha256(sourceInstaller) !== expectedInstallerSha256) throw new Error("Archived Windows installer checksum mismatch. Run git lfs pull.");
@@ -38,9 +60,18 @@ await rm(outputRoot, { recursive: true, force: true });
 await mkdir(extractedRoot, { recursive: true });
 await mkdir(outputRoot, { recursive: true });
 
-await execFileAsync(process.env.SEVEN_ZIP || "7z", ["x", "-y", `-o${extractedRoot}`, sourceInstaller], { windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
-const originalAsar = await findFile(extractedRoot, "app.asar");
-if (!originalAsar) throw new Error("Could not locate app.asar in the archived Windows installer.");
+const sevenZip = process.env.SEVEN_ZIP || "7z";
+await execFileAsync(sevenZip, ["x", "-y", `-o${extractedRoot}`, sourceInstaller], { windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
+let originalAsar = await findFile(extractedRoot, "app.asar");
+if (!originalAsar) {
+  await extractNestedArchives(extractedRoot, sevenZip);
+  originalAsar = await findFile(extractedRoot, "app.asar");
+}
+if (!originalAsar) {
+  const inventory = await walk(extractedRoot);
+  console.error("Windows installer extraction inventory:\n" + inventory.slice(0, 500).join("\n"));
+  throw new Error("Could not locate app.asar after extracting the installer and nested archives.");
+}
 const originalUnpacked = `${originalAsar}.unpacked`;
 
 extractAll(originalAsar, stageRoot);
